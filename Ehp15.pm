@@ -11,7 +11,7 @@ use strict;
 use 5.00503;
 use vars qw($VERSION $_warning);
 
-$VERSION = sprintf '%d.%02d', q$Revision: 0.39 $ =~ m/(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.40 $ =~ m/(\d+)/xmsg;
 
 use Fcntl;
 use Symbol;
@@ -29,12 +29,118 @@ BEGIN {
     }
 }
 
-sub import() {}
-sub unimport() {}
+my $your_char = q{[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]};
+
+# regexp of character
+my  $q_char   = qr/$your_char/oxms;
+
+#
+# HP-15 character range per length
+#
+my %range_tr = ();
+my $is_shiftjis_family = 0;
+my $is_eucjp_family    = 0;
+
+# Big5Plus
+if (__PACKAGE__ eq 'Ebig5plus') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xFF],
+             ],
+        2 => [ [0x81..0xFE],[0x40..0x7E,0x80..0xFE],
+             ],
+    );
+}
+
+# EUC-JP
+elsif (__PACKAGE__ eq 'Eeucjp') {
+    %range_tr = (
+        1 => [ [0x00..0x8D,0x90..0xA0,0xFF],
+             ],
+        2 => [ [0x8E..0x8E],[0xA1..0xDF],
+               [0xA1..0xFE],[0xA1..0xFE],
+             ],
+        3 => [ [0x8F..0x8F],[0xA1..0xFE],[0xA1..0xFE],
+             ],
+    );
+    $is_eucjp_family = 1;
+}
+
+# GB18030
+elsif (__PACKAGE__ eq 'Egb18030') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xFF],
+             ],
+        2 => [ [0x81..0xFE],[0x40..0x7E,0x80..0xFE],
+             ],
+        4 => [ [0x81..0xFE],[0x30..0x39],[0x81..0xFE],[0x30..0x39],
+             ],
+    );
+}
+
+# GBK
+elsif (__PACKAGE__ eq 'Egbk') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xFF],
+             ],
+        2 => [ [0x81..0xFE],[0x40..0x7E,0x80..0xFE],
+             ],
+    );
+}
+
+# HP-15
+elsif (__PACKAGE__ eq 'Ehp15') {
+    %range_tr = (
+        1 => [ [0x00..0x7F,0xA1..0xDF,0xFF],
+             ],
+        2 => [ [0x80..0xA0,0xE0..0xFE],[0x21..0x7E,0x80..0xFF],
+             ],
+    );
+    $is_shiftjis_family = 1;
+}
+
+# INFOMIX V6 ALS
+elsif (__PACKAGE__ eq 'Einfomixv6als') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xA0..0xDF,0xFE..0xFF],
+             ],
+        2 => [ [0x81..0x9F,0xE0..0xFC],[0x40..0x7E,0x80..0xFC],
+             ],
+        3 => [ [0xFD..0xFD],[0xA1..0xFE],[0xA1..0xFE],
+             ],
+    );
+    $is_shiftjis_family = 1;
+}
+
+# HP-15
+elsif (__PACKAGE__ eq 'E'.'sjis') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xA0..0xDF,0xFD..0xFF],
+             ],
+        2 => [ [0x81..0x9F,0xE0..0xFC],[0x40..0x7E,0x80..0xFC],
+             ],
+    );
+    $is_shiftjis_family = 1;
+}
+
+# UHC
+elsif (__PACKAGE__ eq 'Euhc') {
+    %range_tr = (
+        1 => [ [0x00..0x80,0xFF],
+             ],
+        2 => [ [0x81..0xFE],[0x41..0x5A,0x61..0x7A,0x81..0xFE],
+             ],
+    );
+}
+
+else {
+    croak "$0 don't know my package name '" . __PACKAGE__ . "'";
+}
 
 #
 # Prototypes of subroutines
 #
+sub import() {}
+sub unimport() {}
 sub Ehp15::split(;$$$);
 sub Ehp15::tr($$$;$);
 sub Ehp15::chop(@);
@@ -122,12 +228,14 @@ sub HP15::substr($$;$$);
 sub HP15::index($$;$);
 sub HP15::rindex($$;$);
 
+#
 # @ARGV wildcard globbing
+#
 if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
     if ($ENV{'ComSpec'} =~ / (?: COMMAND\.COM | CMD\.EXE ) \z /oxmsi) {
         my @argv = ();
         for (@ARGV) {
-            if (m/\A ' ((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*) ' \z/oxms) {
+            if (m/\A ' ((?:$q_char)*) ' \z/oxms) {
                 push @argv, $1;
             }
             elsif (my @glob = Ehp15::glob($_)) {
@@ -142,7 +250,61 @@ if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
 }
 
 #
-# HP15 split
+# prepare HP-15 characters per length
+#
+my @chars1 = ();
+my @chars2 = ();
+my @chars3 = ();
+my @chars4 = ();
+if (exists $range_tr{1}) {
+    my @ranges = @{ $range_tr{1} };
+    while (my @range = splice(@ranges,0,1)) {
+        for my $oct0 (@{$range[0]}) {
+            push @chars1, pack 'C', $oct0;
+        }
+    }
+}
+if (exists $range_tr{2}) {
+    my @ranges = @{ $range_tr{2} };
+    while (my @range = splice(@ranges,0,2)) {
+        for my $oct0 (@{$range[0]}) {
+            for my $oct1 (@{$range[1]}) {
+                push @chars2, pack 'CC', $oct0,$oct1;
+            }
+        }
+    }
+}
+if (exists $range_tr{3}) {
+    my @ranges = @{ $range_tr{3} };
+    while (my @range = splice(@ranges,0,3)) {
+        for my $oct0 (@{$range[0]}) {
+            for my $oct1 (@{$range[1]}) {
+                for my $oct2 (@{$range[2]}) {
+                    push @chars3, pack 'CCC', $oct0,$oct1,$oct2;
+                }
+            }
+        }
+    }
+}
+if (exists $range_tr{4}) {
+    my @ranges = @{ $range_tr{4} };
+    while (my @range = splice(@ranges,0,4)) {
+        for my $oct0 (@{$range[0]}) {
+            for my $oct1 (@{$range[1]}) {
+                for my $oct2 (@{$range[2]}) {
+                    for my $oct3 (@{$range[3]}) {
+                        push @chars4, pack 'CCCC', $oct0,$oct1,$oct2,$oct3;
+                    }
+                }
+            }
+        }
+    }
+}
+my @minchar = (undef, $chars1[ 0], $chars2[ 0], $chars3[ 0], $chars4[ 0]);
+my @maxchar = (undef, $chars1[-1], $chars2[-1], $chars3[-1], $chars4[-1]);
+
+#
+# HP-15 split
 #
 sub Ehp15::split(;$$$) {
 
@@ -172,7 +334,7 @@ sub Ehp15::split(;$$$) {
             # the //m modifier is assumed when you split on the pattern /^/
             # (and so on)
 
-            while ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*?)\s+//m) {
+            while ($string =~ s/\A((?:$q_char)*?)\s+//m) {
 
                 # if the $pattern contains parentheses, then the substring matched by each pair of parentheses
                 # is included in the resulting list, interspersed with the fields that are ordinarily returned
@@ -191,8 +353,7 @@ sub Ehp15::split(;$$$) {
         # (and so on)
 
         elsif ('' =~ m/ \A $pattern \z /xms) {
-            #                                                                     v--- Look
-            while ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])+?)$pattern//m) {
+            while ($string =~ s/\A((?:$q_char)+?)$pattern//m) {
                 local $@;
                 for (my $digit=1; eval "defined(\$$digit)"; $digit++) {
                     push @split, eval '$' . $digit;
@@ -201,8 +362,7 @@ sub Ehp15::split(;$$$) {
         }
 
         else {
-            #                                                                     v--- Look
-            while ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*?)$pattern//m) {
+            while ($string =~ s/\A((?:$q_char)*?)$pattern//m) {
                 local $@;
                 for (my $digit=1; eval "defined(\$$digit)"; $digit++) {
                     push @split, eval '$' . $digit;
@@ -215,7 +375,7 @@ sub Ehp15::split(;$$$) {
         if ((not defined $pattern) or ($pattern eq ' ')) {
             $string =~ s/ \A \s+ //oxms;
             while ((--$limit > 0) and (CORE::length($string) > 0)) {
-                if ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*?)\s+//m) {
+                if ($string =~ s/\A((?:$q_char)*?)\s+//m) {
                     local $@;
                     for (my $digit=1; eval "defined(\$$digit)"; $digit++) {
                         push @split, eval '$' . $digit;
@@ -225,8 +385,7 @@ sub Ehp15::split(;$$$) {
         }
         elsif ('' =~ m/ \A $pattern \z /xms) {
             while ((--$limit > 0) and (CORE::length($string) > 0)) {
-                #                                                                  v--- Look
-                if ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])+?)$pattern//m) {
+                if ($string =~ s/\A((?:$q_char)+?)$pattern//m) {
                     local $@;
                     for (my $digit=1; eval "defined(\$$digit)"; $digit++) {
                         push @split, eval '$' . $digit;
@@ -236,8 +395,7 @@ sub Ehp15::split(;$$$) {
         }
         else {
             while ((--$limit > 0) and (CORE::length($string) > 0)) {
-                #                                                                  v--- Look
-                if ($string =~ s/\A((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*?)$pattern//m) {
+                if ($string =~ s/\A((?:$q_char)*?)$pattern//m) {
                     local $@;
                     for (my $digit=1; eval "defined(\$$digit)"; $digit++) {
                         push @split, eval '$' . $digit;
@@ -270,7 +428,7 @@ sub Ehp15::split(;$$$) {
 }
 
 #
-# HP15 transliteration (tr///)
+# HP-15 transliteration (tr///)
 #
 sub Ehp15::tr($$$;$) {
 
@@ -278,7 +436,7 @@ sub Ehp15::tr($$$;$) {
     my $replacementlist = $_[2];
     my $modifier        = $_[3] || '';
 
-    my @char            = $_[0] =~ m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
+    my @char            = $_[0] =~ m/\G ($q_char) /oxmsg;
     my @searchlist      = _charlist_tr($searchlist);
     my @replacementlist = _charlist_tr($replacementlist);
 
@@ -342,19 +500,19 @@ sub Ehp15::tr($$$;$) {
 }
 
 #
-# HP15 chop
+# HP-15 chop
 #
 sub Ehp15::chop(@) {
 
     my $chop;
     if (@_ == 0) {
-        my @char = m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])/oxmsg;
+        my @char = m/\G ($q_char)/oxmsg;
         $chop = pop @char;
         $_ = join '', @char;
     }
     else {
         for (@_) {
-            my @char = m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
+            my @char = m/\G ($q_char) /oxmsg;
             $chop = pop @char;
             $_ = join '', @char;
         }
@@ -363,7 +521,7 @@ sub Ehp15::chop(@) {
 }
 
 #
-# HP15 index by octet
+# HP-15 index by octet
 #
 sub Ehp15::index($$;$) {
 
@@ -377,8 +535,8 @@ sub Ehp15::index($$;$) {
                 return $pos;
             }
         }
-        if (CORE::substr($str,$pos,1) =~ m/\A [\x80-\xA0\xE0-\xFE] \z/oxms) {
-            $pos += 2;
+        if (CORE::substr($str,$pos) =~ m/\A ($q_char) /oxms) {
+            $pos += CORE::length($1);
         }
         else {
             $pos += 1;
@@ -388,7 +546,7 @@ sub Ehp15::index($$;$) {
 }
 
 #
-# HP15 reverse index
+# HP-15 reverse index
 #
 sub Ehp15::rindex($$;$) {
 
@@ -401,8 +559,8 @@ sub Ehp15::rindex($$;$) {
         if (CORE::substr($str,$pos,CORE::length($substr)) eq $substr) {
             $rindex = $pos;
         }
-        if (CORE::substr($str,$pos,1) =~ m/\A [\x80-\xA0\xE0-\xFE] \z/oxms) {
-            $pos += 2;
+        if (CORE::substr($str,$pos) =~ m/\A ($q_char) /oxms) {
+            $pos += CORE::length($1);
         }
         else {
             $pos += 1;
@@ -412,7 +570,7 @@ sub Ehp15::rindex($$;$) {
 }
 
 #
-# HP15 lower case (with parameter)
+# HP-15 lower case (with parameter)
 #
 sub Ehp15::lc($) {
 
@@ -424,11 +582,11 @@ sub Ehp15::lc($) {
 
     local $^W = 0;
 
-    return join('', map {$lc{$_}||$_} m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])/oxmsg);
+    return join('', map {$lc{$_}||$_} m/\G ($q_char)/oxmsg);
 }
 
 #
-# HP15 lower case (without parameter)
+# HP-15 lower case (without parameter)
 #
 sub Ehp15::lc_() {
 
@@ -438,11 +596,11 @@ sub Ehp15::lc_() {
 
     local $^W = 0;
 
-    return join('', map {$lc{$_}||$_} m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])/oxmsg);
+    return join('', map {$lc{$_}||$_} m/\G ($q_char)/oxmsg);
 }
 
 #
-# HP15 upper case (with parameter)
+# HP-15 upper case (with parameter)
 #
 sub Ehp15::uc($) {
 
@@ -454,11 +612,11 @@ sub Ehp15::uc($) {
 
     local $^W = 0;
 
-    return join('', map {$uc{$_}||$_} m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg);
+    return join('', map {$uc{$_}||$_} m/\G ($q_char) /oxmsg);
 }
 
 #
-# HP15 upper case (without parameter)
+# HP-15 upper case (without parameter)
 #
 sub Ehp15::uc_() {
 
@@ -468,11 +626,11 @@ sub Ehp15::uc_() {
 
     local $^W = 0;
 
-    return join('', map {$uc{$_}||$_} m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg);
+    return join('', map {$uc{$_}||$_} m/\G ($q_char) /oxmsg);
 }
 
 #
-# HP15 shift matched variables
+# HP-15 shift matched variables
 #
 sub Ehp15::shift_matched_var() {
 
@@ -491,7 +649,7 @@ sub Ehp15::shift_matched_var() {
 }
 
 #
-# HP15 regexp ignore case option
+# HP-15 regexp ignore case option
 #
 sub Ehp15::ignorecase(@) {
 
@@ -504,7 +662,7 @@ sub Ehp15::ignorecase(@) {
         # split regexp
         my @char = $string =~ m{\G(
             \[\^ |
-                \\? (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])
+                \\? (?:$q_char)
         )}oxmsg;
 
         # unescape character
@@ -516,21 +674,21 @@ sub Ehp15::ignorecase(@) {
                 my $left = $i;
                 while (1) {
                     if (++$i > $#char) {
-                        confess "$0: unmatched [] in regexp";
+                        croak "$0: unmatched [] in regexp";
                     }
                     if ($char[$i] eq ']') {
                         my $right = $i;
-                        my @charlist = _charlist_qr(@char[$left+1..$right-1], 'i');
+                        my @charlist = charlist_qr(@char[$left+1..$right-1], 'i');
 
                         # escape character
                         for my $char (@charlist) {
 
                             # do not use quotemeta here
-                            if ($char =~ m/\A ([\x80-\xA0\xE0-\xFE]) ($metachar) \z/oxms) {
-                               $char = $1 . '\\' . $2;
+                            if ($char =~ m/\A ([\x80-\xFF].*) ($metachar) \z/oxms) {
+                                $char = $1 . '\\' . $2;
                             }
                             elsif ($char =~ m/\A [.|)] \z/oxms) {
-                                $char = '\\' . $char;
+                                $char = $1 . '\\' . $char;
                             }
                         }
 
@@ -548,17 +706,17 @@ sub Ehp15::ignorecase(@) {
                 my $left = $i;
                 while (1) {
                     if (++$i > $#char) {
-                        confess "$0: unmatched [] in regexp";
+                        croak "$0: unmatched [] in regexp";
                     }
                     if ($char[$i] eq ']') {
                         my $right = $i;
-                        my @charlist = _charlist_not_qr(@char[$left+1..$right-1], 'i');
+                        my @charlist = charlist_not_qr(@char[$left+1..$right-1], 'i');
 
                         # escape character
                         for my $char (@charlist) {
 
                             # do not use quotemeta here
-                            if ($char =~ m/\A ([\x80-\xA0\xE0-\xFE]) ($metachar) \z/oxms) {
+                            if ($char =~ m/\A ([\x80-\xFF].*) ($metachar) \z/oxms) {
                                 $char = $1 . '\\' . $2;
                             }
                             elsif ($char =~ m/\A [.|)] \z/oxms) {
@@ -567,7 +725,7 @@ sub Ehp15::ignorecase(@) {
                         }
 
                         # [^...]
-                        splice @char, $left, $right-$left+1, '(?!' . join('|', @charlist) . ')(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])';
+                        splice @char, $left, $right-$left+1, '(?!' . join('|', @charlist) . ")(?:$your_char)";
 
                         $i = $left;
                         last;
@@ -598,26 +756,16 @@ sub Ehp15::ignorecase(@) {
         for (my $i=0; $i <= $#char; $i++) {
             next if not defined $char[$i];
 
-            # join separated double octet
-            if ($char[$i] =~ m/\A [\x80-\xA0\xE0-\xFE] \z/oxms) {
-                if ($i < $#char) {
-                    $char[$i] .= $char[$i+1];
-                    splice @char, $i+1, 1;
-                }
-            }
-
-            # escape second octet of double octet
-            if ($char[$i] =~ m/\A ([\x80-\xA0\xE0-\xFE]) ($metachar) \z/oxms) {
+            # escape last octet of multiple octet
+            if ($char[$i] =~ m/\A ([\x80-\xFF].*) ($metachar) \z/oxms) {
                 $char[$i] = $1 . '\\' . $2;
             }
 
-            # quote double octet character before ? + * {
-            elsif (
-                ($i >= 1) and
-                ($char[$i] =~ m/\A [\?\+\*\{] \z/oxms) and
-                ($char[$i-1] =~ m/\A [\x80-\xA0\xE0-\xFE] (?: \\?[\x00-\xFF] ) \z/oxms)
-            ) {
-                $char[$i-1] = '(?:' . $char[$i-1] . ')';
+            # quote character before ? + * {
+            elsif (($i >= 1) and ($char[$i] =~ m/\A [\?\+\*\{] \z/oxms)) {
+                if ($char[$i-1] !~ m/\A [\x00-\xFF] \z/oxms) {
+                    $char[$i-1] = '(?:' . $char[$i-1] . ')';
+                }
             }
         }
 
@@ -629,7 +777,7 @@ sub Ehp15::ignorecase(@) {
 }
 
 #
-# HP15 open character list for tr
+# HP-15 open character list for tr
 #
 sub _charlist_tr {
 
@@ -638,7 +786,10 @@ sub _charlist_tr {
     # unescape character
     my @char = ();
     while (not m/\G \z/oxmsgc) {
-        if (m/\G \\ ([0-7]{2,3}) /oxmsgc) {
+        if (m/\G (\\0?55|\\x2[Dd]|\\-) /oxmsgc) {
+            push @char, '\-';
+        }
+        elsif (m/\G \\ ([0-7]{2,3}) /oxmsgc) {
             push @char, CORE::chr(oct $1);
         }
         elsif (m/\G \\x ([0-9A-Fa-f]{1,2}) /oxmsgc) {
@@ -659,83 +810,241 @@ sub _charlist_tr {
                 '\e' => "\e",
             }->{$1};
         }
-        elsif (m/\G \\ ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsgc) {
+        elsif (m/\G \\ ($q_char) /oxmsgc) {
             push @char, $1;
         }
-        elsif (m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsgc) {
+        elsif (m/\G ($q_char) /oxmsgc) {
             push @char, $1;
         }
     }
 
-    # join separated double octet
-    @char = join('',@char) =~ m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
+    # join separated multiple octet
+    @char = join('',@char) =~ m/\G (\\-|$q_char) /oxmsg;
 
-    # open character list
-    for (my $i=$#char-1; $i >= 1; ) {
-
-        # escaped -
-        if (($char[$i] eq '-') and (0 < $i) and ($i < $#char-1)) {
-            my @range = ();
-
-            # range of single octet code
-            if (
-                ($char[$i-1] =~ m/\A [\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x00-\xFF] \z/oxms)
-            ) {
-                my $begin = unpack 'C', $char[$i-1];
-                my $end   = unpack 'C', $char[$i+1];
-                if ($begin <= $end) {
-                    for my $c ($begin..$end) {
-                        push @range, pack 'C', $c;
-                    }
-                }
-                else {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-            }
-
-            # range of double octet code
-            elsif (
-                ($char[$i-1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms)
-            ) {
-                my($begin1,$begin2) = unpack 'CC', $char[$i-1];
-                my($end1,$end2)     = unpack 'CC', $char[$i+1];
-                my $begin = $begin1 * 0x100 + $begin2;
-                my $end   = $end1   * 0x100 + $end2;
-                if ($begin <= $end) {
-                    for my $cc ($begin..$end) {
-                        my $char = pack('CC', int($cc / 0x100), $cc % 0x100);
-                        if ($char =~ m/\A [\x80-\xA0\xE0-\xFE] [\x21-\x7E\x80-\xFF] \z/oxms) {
-                            push @range, $char;
-                        }
-                    }
-                }
-                else {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-            }
-
-            # range error
-            else {
-                confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-            }
-
-            splice @char, $i-1, 3, @range;
-            $i -= 2;
+    # unescape '-'
+    my @i = ();
+    for my $i (0 .. $#char) {
+        if ($char[$i] eq '\-') {
+            $char[$i] = '-';
         }
-        else {
-            $i -= 1;
+        elsif ($char[$i] eq '-') {
+            if ((0 < $i) and ($i < $#char)) {
+                push @i, $i;
+            }
         }
+    }
+
+    # open character list (reverse for splice)
+    for my $i (CORE::reverse @i) {
+        my @range = ();
+
+        # range error
+        if ((length($char[$i-1]) > length($char[$i+1])) or ($char[$i-1] gt $char[$i+1])) {
+            croak "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
+        }
+
+        # range of multiple octet code
+        if (length($char[$i-1]) == 1) {
+            if (length($char[$i+1]) == 1) {
+                push @range, grep {($char[$i-1] le $_) and ($_ le $char[$i+1])} @chars1;
+            }
+            elsif (length($char[$i+1]) == 2) {
+                push @range, grep {$char[$i-1] le $_}                           @chars1;
+                push @range, grep {$_ le $char[$i+1]}                           @chars2;
+            }
+            elsif (length($char[$i+1]) == 3) {
+                push @range, grep {$char[$i-1] le $_}                           @chars1;
+                push @range,                                                    @chars2;
+                push @range, grep {$_ le $char[$i+1]}                           @chars3;
+            }
+            elsif (length($char[$i+1]) == 4) {
+                push @range, grep {$char[$i-1] le $_}                           @chars1;
+                push @range,                                                    @chars2;
+                push @range,                                                    @chars3;
+                push @range, grep {$_ le $char[$i+1]}                           @chars4;
+            }
+        }
+        elsif (length($char[$i-1]) == 2) {
+            if (length($char[$i+1]) == 2) {
+                push @range, grep {($char[$i-1] le $_) and ($_ le $char[$i+1])} @chars2;
+            }
+            elsif (length($char[$i+1]) == 3) {
+                push @range, grep {$char[$i-1] le $_}                           @chars2;
+                push @range, grep {$_ le $char[$i+1]}                           @chars3;
+            }
+            elsif (length($char[$i+1]) == 4) {
+                push @range, grep {$char[$i-1] le $_}                           @chars2;
+                push @range,                                                    @chars3;
+                push @range, grep {$_ le $char[$i+1]}                           @chars4;
+            }
+        }
+        elsif (length($char[$i-1]) == 3) {
+            if (length($char[$i+1]) == 3) {
+                push @range, grep {($char[$i-1] le $_) and ($_ le $char[$i+1])} @chars3;
+            }
+            elsif (length($char[$i+1]) == 4) {
+                push @range, grep {$char[$i-1] le $_}                           @chars3;
+                push @range, grep {$_ le $char[$i+1]}                           @chars4;
+            }
+        }
+        elsif (length($char[$i-1]) == 4) {
+            if (length($char[$i+1]) == 4) {
+                push @range, grep {($char[$i-1] le $_) and ($_ le $char[$i+1])} @chars4;
+            }
+        }
+
+        splice @char, $i-1, 3, @range;
     }
 
     return @char;
 }
 
 #
-# HP15 open character list for qr
+# HP-15 octet range
 #
-sub _charlist_qr {
+sub _octets {
+
+    my $modifier = pop @_;
+    my $length = shift;
+
+    my($a) = unpack 'C', $_[0];
+    my($z) = unpack 'C', $_[1];
+
+    # single octet code
+    if ($length == 1) {
+
+        # single octet and ignore case
+        if (((caller(1))[3] ne 'Ehp15::_octets') and ($modifier =~ m/i/oxms)) {
+            if ($a == $z) {
+                return sprintf('(?i:\x%02X)',          $a);
+            }
+            elsif (($a+1) == $z) {
+                return sprintf('(?i:[\x%02X\x%02X])',  $a, $z);
+            }
+            else {
+                return sprintf('(?i:[\x%02X-\x%02X])', $a, $z);
+            }
+        }
+
+        # not ignore case or one of multiple octet
+        else {
+            if ($a == $z) {
+                return sprintf('\x%02X',          $a);
+            }
+            elsif (($a+1) == $z) {
+                return sprintf('[\x%02X\x%02X]',  $a, $z);
+            }
+            else {
+                return sprintf('[\x%02X-\x%02X]', $a, $z);
+            }
+        }
+    }
+
+    # double octet code of Shift_JIS family
+    elsif (($length == 2) and $is_shiftjis_family and ($a <= 0x9F) and (0xE0 <= $z)) {
+        my(undef,$a2) = unpack 'CC', $_[0];
+        my(undef,$z2) = unpack 'CC', $_[1];
+        my $octets1;
+        my $octets2;
+
+        if ($a == 0x9F) {
+            $octets1 = sprintf('\x%02X[\x%02X-\xFF]',                            0x9F,$a2);
+        }
+        elsif (($a+1) == 0x9F) {
+            $octets1 = sprintf('\x%02X[\x%02X-\xFF]|\x%02X[\x00-\xFF]',          $a,  $a2,$a+1),
+        }
+        elsif (($a+2) == 0x9F) {
+            $octets1 = sprintf('\x%02X[\x%02X-\xFF]|[\x%02X\x%02X][\x00-\xFF]',  $a,  $a2,$a+1,$a+2),
+        }
+        else {
+            $octets1 = sprintf('\x%02X[\x%02X-\xFF]|[\x%02X-\x%02X][\x00-\xFF]', $a,  $a2,$a+1,$a+2),
+        }
+
+        if ($z == 0xE0) {
+            $octets2 = sprintf('\x%02X[\x00-\x%02X]',                                      $z,$z2);
+        }
+        elsif (($z-1) == 0xE0) {
+            $octets2 = sprintf('\x%02X[\x00-\xFF]|\x%02X[\x00-\x%02X]',               $z-1,$z,$z2),
+        }
+        elsif (($z-2) == 0xE0) {
+            $octets2 = sprintf('[\x%02X\x%02X][\x00-\xFF]|\x%02X[\x00X-\x%02X]', $z-2,$z-1,$z,$z2),
+        }
+        else {
+            $octets2 = sprintf('[\x%02X-\x%02X][\x00-\xFF]|\x%02X[\x00-\x%02X]', 0xE0,$z-1,$z,$z2),
+        }
+
+        return "(?:$octets1|$octets2)";
+    }
+
+    # double octet code of EUC-JP family
+    elsif (($length == 2) and $is_eucjp_family and ($a == 0x8E) and (0xA1 <= $z)) {
+        my(undef,$a2) = unpack 'CC', $_[0];
+        my(undef,$z2) = unpack 'CC', $_[1];
+        my $octets1;
+        my $octets2;
+
+        $octets1 = sprintf('\x%02X[\x%02X-\xFF]',                                0x8E,$a2);
+
+        if ($z == 0xA1) {
+            $octets2 = sprintf('\x%02X[\x00-\x%02X]',                                      $z,$z2);
+        }
+        elsif (($z-1) == 0xA1) {
+            $octets2 = sprintf('\x%02X[\x00-\xFF]|\x%02X[\x00-\x%02X]',               $z-1,$z,$z2),
+        }
+        elsif (($z-2) == 0xA1) {
+            $octets2 = sprintf('[\x%02X\x%02X][\x00-\xFF]|\x%02X[\x00X-\x%02X]', $z-2,$z-1,$z,$z2),
+        }
+        else {
+            $octets2 = sprintf('[\x%02X-\x%02X][\x00-\xFF]|\x%02X[\x00-\x%02X]', 0xA1,$z-1,$z,$z2),
+        }
+
+        return "(?:$octets1|$octets2)";
+    }
+
+    # multiple octet code
+    else {
+        my(undef,$aa) = unpack 'Ca*', $_[0];
+        my(undef,$zz) = unpack 'Ca*', $_[1];
+
+        if ($a == $z) {
+            return '(?:' . join('|',
+                sprintf('\x%02X%s',         $a,         _octets($length-1,$aa,                $zz,                $modifier)),
+            ) . ')';
+        }
+        elsif (($a+1) == $z) {
+            return '(?:' . join('|',
+                sprintf('\x%02X%s',         $a,         _octets($length-1,$aa,                $maxchar[$length-1],$modifier)),
+                sprintf('\x%02X%s',              $z,    _octets($length-1,$minchar[$length-1],$zz,                $modifier)),
+            ) . ')';
+        }
+        elsif (($a+2) == $z) {
+            return '(?:' . join('|',
+                sprintf('\x%02X%s',         $a,         _octets($length-1,$aa,                $maxchar[$length-1],$modifier)),
+                sprintf('\x%02X%s',         $a+1,       _octets($length-1,$minchar[$length-1],$maxchar[$length-1],$modifier)),
+                sprintf('\x%02X%s',              $z,    _octets($length-1,$minchar[$length-1],$zz,                $modifier)),
+            ) . ')';
+        }
+        elsif (($a+3) == $z) {
+            return '(?:' . join('|',
+                sprintf('\x%02X%s',         $a,         _octets($length-1,$aa,                $maxchar[$length-1],$modifier)),
+                sprintf('[\x%02X\x%02X]%s', $a+1,$z-1,  _octets($length-1,$minchar[$length-1],$maxchar[$length-1],$modifier)),
+                sprintf('\x%02X%s',              $z,    _octets($length-1,$minchar[$length-1],$zz,                $modifier)),
+            ) . ')';
+        }
+        else {
+            return '(?:' . join('|',
+                sprintf('\x%02X%s',          $a,        _octets($length-1,$aa,                $maxchar[$length-1],$modifier)),
+                sprintf('[\x%02X-\x%02X]%s', $a+1,$z-1, _octets($length-1,$minchar[$length-1],$maxchar[$length-1],$modifier)),
+                sprintf('\x%02X%s',               $z,   _octets($length-1,$minchar[$length-1],$zz,                $modifier)),
+            ) . ')';
+        }
+    }
+}
+
+#
+# HP-15 open character list for qr and not qr
+#
+sub _charlist {
 
     my $modifier = pop @_;
     my @char = @_;
@@ -754,12 +1063,6 @@ sub _charlist_qr {
         }
         elsif ($char[$i] =~ m/\A \\x ([0-9A-Fa-f]{1,2}) \z/oxms) {
             $char[$i] = CORE::chr hex $1;
-        }
-        elsif ($char[$i] =~ m/\A \\x \{ ([0-9A-Fa-f]{1,2}) \} \z/oxms) {
-            $char[$i] = pack 'H2', $1;
-        }
-        elsif ($char[$i] =~ m/\A \\x \{ ([0-9A-Fa-f]{3,4}) \} \z/oxms) {
-            $char[$i] = pack 'H4', $1;
         }
         elsif ($char[$i] =~ m/\A \\c ([\x40-\x5F]) \z/oxms) {
             $char[$i] = CORE::chr(CORE::ord($1) & 0x1F);
@@ -786,7 +1089,7 @@ sub _charlist_qr {
                 '\W' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\w])',
             }->{$1};
         }
-        elsif ($char[$i] =~ m/\A \\ ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) \z/oxms) {
+        elsif ($char[$i] =~ m/\A \\ ($q_char) \z/oxms) {
             $char[$i] = $1;
         }
     }
@@ -794,140 +1097,108 @@ sub _charlist_qr {
     # open character list
     my @singleoctet = ();
     my @charlist    = ();
-    if ((scalar(@char) == 1) or ((scalar(@char) >= 2) and ($char[1] ne '...'))) {
-        if ($char[0] =~ m/\A [\x00-\xFF] \z/oxms) {
-            push @singleoctet, $char[0];
-        }
-        else {
-            push @charlist, $char[0];
-        }
-    }
-    for (my $i=1; $i <= $#char-1; ) {
+    for (my $i=0; $i <= $#char; ) {
 
         # escaped -
-        if ($char[$i] eq '...') {
-
-            # range of single octet code
-            if (
-                ($char[$i-1] =~ m/\A [\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x00-\xFF] \z/oxms)
-            ) {
-                my $begin = unpack 'C', $char[$i-1];
-                my $end   = unpack 'C', $char[$i+1];
-                if ($begin > $end) {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-                else {
-                    if ($modifier =~ m/i/oxms) {
-                        my %range = ();
-                        for my $c ($begin .. $end) {
-                            $range{CORE::ord CORE::uc CORE::chr $c} = 1;
-                            $range{CORE::ord CORE::lc CORE::chr $c} = 1;
-                        }
-
-                        my @lt = grep {$_ < $begin} sort {$a <=> $b} keys %range;
-                        if (scalar(@lt) == 1) {
-                            push @singleoctet, sprintf(q{\\x%02X},         $lt[0]);
-                        }
-                        elsif (scalar(@lt) >= 2) {
-                            push @singleoctet, sprintf(q{\\x%02X-\\x%02X}, $lt[0], $lt[-1]);
-                        }
-
-                        push @singleoctet, sprintf(q{\\x%02X-\\x%02X},     $begin, $end);
-
-                        my @gt = grep {$_ > $end  } sort {$a <=> $b} keys %range;
-                        if (scalar(@gt) == 1) {
-                            push @singleoctet, sprintf(q{\\x%02X},         $gt[0]);
-                        }
-                        elsif (scalar(@gt) >= 2) {
-                            push @singleoctet, sprintf(q{\\x%02X-\\x%02X}, $gt[0], $gt[-1]);
-                        }
-                    }
-                    else {
-                        push @singleoctet, sprintf(q{\\x%02X-\\x%02X},     $begin, $end);
-                    }
-                }
-            }
-
-            # range of double octet code
-            elsif (
-                ($char[$i-1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms)
-            ) {
-                my($begin1,$begin2) = unpack 'CC', $char[$i-1];
-                my($end1,  $end2)   = unpack 'CC', $char[$i+1];
-                my $begin = $begin1 * 0x100 + $begin2;
-                my $end   = $end1   * 0x100 + $end2;
-                if ($begin > $end) {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-                elsif ($begin1 == $end1) {
-                    push @charlist, sprintf(q{\\x%02X[\\x%02X-\\x%02X]}, $begin1, $begin2, $end2);
-                }
-                elsif (($begin1 + 1) == $end1) {
-                    push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},   $begin1, $begin2);
-                    push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},   $end1,   $end2);
-                }
-                else {
-                    my @middle = ();
-                    for my $c ($begin1+1 .. $end1-1) {
-                        if ((0x81 <= $c and $c <= 0x9F) or (0xE0 <= $c and $c <= 0xFC)) {
-                            push @middle, $c;
-                        }
-                    }
-                    if (scalar(@middle) == 0) {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                    elsif (scalar(@middle) == 1) {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\xFF]},           $middle[0]);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                    else {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{[\\x%02X-\\x%02X][\\x00-\\xFF]}, $middle[0], $middle[-1]);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                }
-            }
+        if (defined($char[$i+1]) and ($char[$i+1] eq '...')) {
+            $i += 1;
+            next;
+        }
+        elsif ($char[$i] eq '...') {
 
             # range error
+            if ((length($char[$i-1]) > length($char[$i+1])) or ($char[$i-1] gt $char[$i+1])) {
+                croak "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
+            }
+
+            # range of single octet code and not ignore case
+            if ((length($char[$i-1]) == 1) and (length($char[$i+1]) == 1) and ($modifier !~ m/i/oxms)) {
+                my $a = unpack 'C', $char[$i-1];
+                my $z = unpack 'C', $char[$i+1];
+
+                if ($a == $z) {
+                    push @singleoctet, sprintf('\x%02X',        $a);
+                }
+                elsif (($a+1) == $z) {
+                    push @singleoctet, sprintf('\x%02X\x%02X',  $a, $z);
+                }
+                else {
+                    push @singleoctet, sprintf('\x%02X-\x%02X', $a, $z);
+                }
+            }
+
+            # range of multiple octet code
+            elsif (length($char[$i-1]) == length($char[$i+1])) {
+                push @charlist, _octets(length($char[$i-1]), $char[$i-1], $char[$i+1], $modifier);
+            }
+            elsif (length($char[$i-1]) == 1) {
+                if (length($char[$i+1]) == 2) {
+                    push @charlist,
+                        _octets(1, $char[$i-1], $maxchar[1], $modifier),
+                        _octets(2, $minchar[2], $char[$i+1], $modifier);
+                }
+                elsif (length($char[$i+1]) == 3) {
+                    push @charlist,
+                        _octets(1, $char[$i-1], $maxchar[1], $modifier),
+                        _octets(2, $minchar[2], $maxchar[2], $modifier),
+                        _octets(3, $minchar[3], $char[$i+1], $modifier);
+                }
+                elsif (length($char[$i+1]) == 4) {
+                    push @charlist,
+                        _octets(1, $char[$i-1], $maxchar[1], $modifier),
+                        _octets(2, $minchar[2], $maxchar[2], $modifier),
+                        _octets(3, $minchar[3], $maxchar[3], $modifier),
+                        _octets(4, $minchar[4], $char[$i+1], $modifier);
+                }
+            }
+            elsif (length($char[$i-1]) == 2) {
+                if (length($char[$i+1]) == 3) {
+                    push @charlist,
+                        _octets(2, $char[$i-1], $maxchar[2], $modifier),
+                        _octets(3, $minchar[3], $char[$i+1], $modifier);
+                }
+                elsif (length($char[$i+1]) == 4) {
+                    push @charlist,
+                        _octets(2, $char[$i-1], $maxchar[2], $modifier),
+                        _octets(3, $minchar[3], $maxchar[3], $modifier),
+                        _octets(4, $minchar[4], $char[$i+1], $modifier);
+                }
+            }
+            elsif (length($char[$i-1]) == 3) {
+                if (length($char[$i+1]) == 4) {
+                    push @charlist,
+                        _octets(3, $char[$i-1], $maxchar[3], $modifier),
+                        _octets(4, $minchar[4], $char[$i+1], $modifier);
+                }
+            }
             else {
-                confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
+                croak "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
             }
 
             $i += 2;
         }
 
         # /i modifier
-        elsif (($char[$i] =~ m/\A ([A-Za-z]) \z/oxms) and (($i+1 > $#char) or ($char[$i+1] ne '...'))) {
-            my $c = $1;
+        elsif ($char[$i] =~ m/\A [A-Za-z] \z/oxms) {
             if ($modifier =~ m/i/oxms) {
-                push @singleoctet, CORE::uc $c, CORE::lc $c;
+                push @singleoctet, CORE::uc $char[$i], CORE::lc $char[$i];
             }
             else {
-                push @singleoctet, $c;
+                push @singleoctet, $char[$i];
             }
             $i += 1;
         }
 
-        # single character
-        elsif ($char[$i] =~ m/\A (?: [\x00-\xFF] | \\d | \\h | \\s | \\v | \\w )  \z/oxms) {
+        # single character of single octet code
+        elsif ($char[$i] =~ m/\A (?: [\x00-\xFF] | \\d | \\h | \\s | \\v | \\w ) \z/oxms) {
             push @singleoctet, $char[$i];
             $i += 1;
         }
+
+        # single character of multiple octet code
         else {
             push @charlist, $char[$i];
             $i += 1;
-        }
-    }
-    if ((scalar(@char) >= 2) and ($char[-2] ne '...')) {
-        if ($char[-1] =~ m/\A [\x00-\xFF] \z/oxms) {
-            push @singleoctet, $char[-1];
-        }
-        else {
-            push @charlist, $char[-1];
         }
     }
 
@@ -939,8 +1210,8 @@ sub _charlist_qr {
         elsif (m/\A \r \z/oxms) {
             $_ = '\r';
         }
-        elsif (m/\A ([\x00-\x21\x7F-\xA0\xE0-\xFF]) \z/oxms) {
-            $_ = sprintf(q{\\x%02X}, CORE::ord $1);
+        elsif (m/\A ([\x00-\x20\x7F-\xFF]) \z/oxms) {
+            $_ = sprintf('\x%02X', CORE::ord $1);
         }
         elsif (m/\A [\x00-\xFF] \z/oxms) {
             $_ = quotemeta $_;
@@ -951,6 +1222,22 @@ sub _charlist_qr {
             $_ = $1 . quotemeta $2;
         }
     }
+
+    # return character list
+    return \@singleoctet, \@charlist;
+}
+
+#
+# HP-15 open character list for qr
+#
+sub charlist_qr {
+
+    my $modifier = pop @_;
+    my @char = @_;
+
+    my($singleoctet, $charlist) = _charlist(@char, $modifier);
+    my @singleoctet = @$singleoctet;
+    my @charlist    = @$charlist;
 
     # return character list
     if (scalar(@singleoctet) == 0) {
@@ -973,282 +1260,98 @@ sub _charlist_qr {
 }
 
 #
-# HP15 open character list for not qr
+# HP-15 open character list for not qr
 #
-sub _charlist_not_qr {
+sub charlist_not_qr {
 
     my $modifier = pop @_;
     my @char = @_;
 
-    # unescape character
-    for (my $i=0; $i <= $#char; $i++) {
-
-        # escape - to ...
-        if ($char[$i] eq '-') {
-            if ((0 < $i) and ($i < $#char)) {
-                $char[$i] = '...';
-            }
-        }
-        elsif ($char[$i] =~ m/\A \\ ([0-7]{2,3}) \z/oxms) {
-            $char[$i] = CORE::chr oct $1;
-        }
-        elsif ($char[$i] =~ m/\A \\x ([0-9A-Fa-f]{1,2}) \z/oxms) {
-            $char[$i] = CORE::chr hex $1;
-        }
-        elsif ($char[$i] =~ m/\A \\x \{ ([0-9A-Fa-f]{1,2}) \} \z/oxms) {
-            $char[$i] = pack 'H2', $1;
-        }
-        elsif ($char[$i] =~ m/\A \\x \{ ([0-9A-Fa-f]{3,4}) \} \z/oxms) {
-            $char[$i] = pack 'H4', $1;
-        }
-        elsif ($char[$i] =~ m/\A \\c ([\x40-\x5F]) \z/oxms) {
-            $char[$i] = CORE::chr(CORE::ord($1) & 0x1F);
-        }
-        elsif ($char[$i] =~ m/\A (\\ [0nrtfbaedDhHsSvVwW]) \z/oxms) {
-            $char[$i] = {
-                '\0' => "\0",
-                '\n' => "\n",
-                '\r' => "\r",
-                '\t' => "\t",
-                '\f' => "\f",
-                '\b' => "\x08", # \b means backspace in character class
-                '\a' => "\a",
-                '\e' => "\e",
-                '\d' => '\d',
-                '\h' => '\h',
-                '\s' => '\s',
-                '\v' => '\v',
-                '\w' => '\w',
-                '\D' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\d])',
-                '\H' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\h])',
-                '\S' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\s])',
-                '\V' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\v])',
-                '\W' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^\w])',
-            }->{$1};
-        }
-        elsif ($char[$i] =~ m/\A \\ ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) \z/oxms) {
-            $char[$i] = $1;
-        }
-    }
-
-    # open character list
-    my @singleoctet = ();
-    my @charlist    = ();
-    if ((scalar(@char) == 1) or ((scalar(@char) >= 2) and ($char[1] ne '...'))) {
-        if ($char[0] =~ m/\A [\x00-\xFF] \z/oxms) {
-            push @singleoctet, $char[0];
-        }
-        else {
-            push @charlist, $char[0];
-        }
-    }
-    for (my $i=1; $i <= $#char-1; ) {
-
-        # escaped -
-        if ($char[$i] eq '...') {
-
-            # range of single octet code
-            if (
-                ($char[$i-1] =~ m/\A [\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x00-\xFF] \z/oxms)
-            ) {
-                my $begin = unpack 'C', $char[$i-1];
-                my $end   = unpack 'C', $char[$i+1];
-                if ($begin > $end) {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-                else {
-                    if ($modifier =~ m/i/oxms) {
-                        my %range = ();
-                        for my $c ($begin .. $end) {
-                            $range{CORE::ord CORE::uc CORE::chr $c} = 1;
-                            $range{CORE::ord CORE::lc CORE::chr $c} = 1;
-                        }
-
-                        my @lt = grep {$_ < $begin} sort {$a <=> $b} keys %range;
-                        if (scalar(@lt) == 1) {
-                            push @singleoctet, sprintf(q{\\x%02X},         $lt[0]);
-                        }
-                        elsif (scalar(@lt) >= 2) {
-                            push @singleoctet, sprintf(q{\\x%02X-\\x%02X}, $lt[0], $lt[-1]);
-                        }
-
-                        push @singleoctet, sprintf(q{\\x%02X-\\x%02X},     $begin, $end);
-
-                        my @gt = grep {$_ > $end  } sort {$a <=> $b} keys %range;
-                        if (scalar(@gt) == 1) {
-                            push @singleoctet, sprintf(q{\\x%02X},         $gt[0]);
-                        }
-                        elsif (scalar(@gt) >= 2) {
-                            push @singleoctet, sprintf(q{\\x%02X-\\x%02X}, $gt[0], $gt[-1]);
-                        }
-                    }
-                    else {
-                        push @singleoctet, sprintf(q{[\\x%02X-\\x%02X]},   $begin, $end);
-                    }
-                }
-            }
-
-            # range of double octet code
-            elsif (
-                ($char[$i-1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms) and
-                ($char[$i+1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x00-\xFF] \z/oxms)
-            ) {
-                my($begin1,$begin2) = unpack 'CC', $char[$i-1];
-                my($end1,  $end2)   = unpack 'CC', $char[$i+1];
-                my $begin = $begin1 * 0x100 + $begin2;
-                my $end   = $end1   * 0x100 + $end2;
-                if ($begin > $end) {
-                    confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-                }
-                elsif ($begin1 == $end1) {
-                    push @charlist, sprintf(q{\\x%02X[\\x%02X-\\x%02X]}, $begin1, $begin2, $end2);
-                }
-                elsif (($begin1 + 1) == $end1) {
-                    push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},   $begin1, $begin2);
-                    push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},   $end1,   $end2);
-                }
-                else {
-                    my @middle = ();
-                    for my $c ($begin1+1 .. $end1-1) {
-                        if ((0x81 <= $c and $c <= 0x9F) or (0xE0 <= $c and $c <= 0xFC)) {
-                            push @middle, $c;
-                        }
-                    }
-                    if (scalar(@middle) == 0) {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                    elsif (scalar(@middle) == 1) {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\xFF]},           $middle[0]);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                    else {
-                        push @charlist, sprintf(q{\\x%02X[\\x%02X-\\xFF]},         $begin1,    $begin2);
-                        push @charlist, sprintf(q{[\\x%02X-\\x%02X][\\x00-\\xFF]}, $middle[0], $middle[-1]);
-                        push @charlist, sprintf(q{\\x%02X[\\x00-\\x%02X]},         $end1,      $end2);
-                    }
-                }
-            }
-
-            # range error
-            else {
-                confess "$0: invalid [] range \"\\x" . unpack('H*',$char[$i-1]) . '-\\x' . unpack('H*',$char[$i+1]) . '" in regexp';
-            }
-
-            $i += 2;
-        }
-
-        # /i modifier
-        elsif (($char[$i] =~ m/\A ([A-Za-z]) \z/oxms) and (($i+1 > $#char) or ($char[$i+1] ne '...'))) {
-            my $c = $1;
-            if ($modifier =~ m/i/oxms) {
-                push @singleoctet, CORE::uc $c, CORE::lc $c;
-            }
-            else {
-                push @singleoctet, $c;
-            }
-            $i += 1;
-        }
-
-        # single character
-        elsif ($char[$i] =~ m/\A (?: [\x00-\xFF] | \\d | \\h | \\s | \\v | \\w )  \z/oxms) {
-            push @singleoctet, $char[$i];
-            $i += 1;
-        }
-        else {
-            push @charlist, $char[$i];
-            $i += 1;
-        }
-    }
-    if ((scalar(@char) >= 2) and ($char[-2] ne '...')) {
-        if ($char[-1] =~ m/\A [\x00-\xFF] \z/oxms) {
-            push @singleoctet, $char[-1];
-        }
-        else {
-            push @charlist, $char[-1];
-        }
-    }
-
-    # quote metachar
-    for (@singleoctet) {
-        if (m/\A \n \z/oxms) {
-            $_ = '\n';
-        }
-        elsif (m/\A \r \z/oxms) {
-            $_ = '\r';
-        }
-        elsif (m/\A ([\x00-\x21\x7F-\xA0\xE0-\xFF]) \z/oxms) {
-            $_ = sprintf(q{\\x%02X}, CORE::ord $1);
-        }
-        elsif (m/\A [\x00-\xFF] \z/oxms) {
-            $_ = quotemeta $_;
-        }
-    }
-    for (@charlist) {
-        if (m/\A ([\x80-\xA0\xE0-\xFE]) ([\x00-\xFF]) \z/oxms) {
-            $_ = $1 . quotemeta $2;
-        }
-    }
+    my($singleoctet, $charlist) = _charlist(@char, $modifier);
+    my @singleoctet = @$singleoctet;
+    my @charlist    = @$charlist;
 
     # return character list
     if (scalar(@charlist) >= 1) {
         if (scalar(@singleoctet) >= 1) {
+
+            # any character other than multiple octet and single octet character class
             return '(?!' . join('|', @charlist) . ')(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^'. join('', @singleoctet) . '])';
         }
         else {
-            return '(?!' . join('|', @charlist) . ')(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF])';
+
+            # any character other than multiple octet character class
+            return '(?!' . join('|', @charlist) . ")(?:$your_char)";
         }
     }
     else {
         if (scalar(@singleoctet) >= 1) {
+
+            # any character other than single octet character class
             return                                 '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[^'. join('', @singleoctet) . '])';
         }
         else {
-            return                                 '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF])';
+
+            # any character
+            return                                 "(?:$your_char)";
         }
     }
 }
 
 #
-# HP15 order to character (with parameter)
+# HP-15 order to character (with parameter)
 #
 sub Ehp15::chr($) {
 
-    local $_ = shift if @_;
+    my $c = @_ ? $_[0] : $_;
 
-    if ($_ > 0xFF) {
-        return pack 'CC', int($_ / 0x100), $_ % 0x100;
+    if ($c == 0x00) {
+        return "\x00";
     }
     else {
-        return CORE::chr $_;
+        my @chr = ();
+        while ($c > 0) {
+            unshift @chr, ($c % 0x100);
+            $c = int($c / 0x100);
+        }
+        return pack 'C*', @chr;
     }
 }
 
 #
-# HP15 order to character (without parameter)
+# HP-15 order to character (without parameter)
 #
 sub Ehp15::chr_() {
 
-    if ($_ > 0xFF) {
-        return pack 'CC', int($_ / 0x100), $_ % 0x100;
+    my $c = $_;
+
+    if ($c == 0x00) {
+        return "\x00";
     }
     else {
-        return CORE::chr $_;
+        my @chr = ();
+        while ($c > 0) {
+            unshift @chr, ($c % 0x100);
+            $c = int($c / 0x100);
+        }
+        return pack 'C*', @chr;
     }
 }
 
 #
-# HP15 character to order (with parameter)
+# HP-15 character to order (with parameter)
 #
 sub Ehp15::ord($) {
 
     local $_ = shift if @_;
 
-    if (m/\A [\x80-\xA0\xE0-\xFE] /oxms) {
-        my($ord1,$ord2) = unpack 'CC', $_;
-        return $ord1 * 0x100 + $ord2;
+    if (m/\A ($q_char) /oxms) {
+        my @ord = unpack 'C*', $1;
+        my $ord = 0;
+        while (my $o = shift @ord) {
+            $ord = $ord * 0x100 + $o;
+        }
+        return $ord;
     }
     else {
         return CORE::ord $_;
@@ -1256,13 +1359,17 @@ sub Ehp15::ord($) {
 }
 
 #
-# HP15 character to order (without parameter)
+# HP-15 character to order (without parameter)
 #
 sub Ehp15::ord_() {
 
-    if (m/\A [\x80-\xA0\xE0-\xFE] /oxms) {
-        my($ord1,$ord2) = unpack 'CC', $_;
-        return $ord1 * 0x100 + $ord2;
+    if (m/\A ($q_char) /oxms) {
+        my @ord = unpack 'C*', $1;
+        my $ord = 0;
+        while (my $o = shift @ord) {
+            $ord = $ord * 0x100 + $o;
+        }
+        return $ord;
     }
     else {
         return CORE::ord $_;
@@ -1270,7 +1377,7 @@ sub Ehp15::ord_() {
 }
 
 #
-# HP15 reverse
+# HP-15 reverse
 #
 sub Ehp15::reverse(@) {
 
@@ -1278,12 +1385,12 @@ sub Ehp15::reverse(@) {
         return CORE::reverse @_;
     }
     else {
-        return join '', CORE::reverse(join('',@_) =~ m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg);
+        return join '', CORE::reverse(join('',@_) =~ m/\G ($q_char) /oxmsg);
     }
 }
 
 #
-# HP15 file test -r expr
+# HP-15 file test -r expr
 #
 sub Ehp15::r(;*@) {
 
@@ -1322,7 +1429,7 @@ sub Ehp15::r(;*@) {
 }
 
 #
-# HP15 file test -w expr
+# HP-15 file test -w expr
 #
 sub Ehp15::w(;*@) {
 
@@ -1355,7 +1462,7 @@ sub Ehp15::w(;*@) {
 }
 
 #
-# HP15 file test -x expr
+# HP-15 file test -x expr
 #
 sub Ehp15::x(;*@) {
 
@@ -1390,7 +1497,7 @@ sub Ehp15::x(;*@) {
 }
 
 #
-# HP15 file test -o expr
+# HP-15 file test -o expr
 #
 sub Ehp15::o(;*@) {
 
@@ -1423,7 +1530,7 @@ sub Ehp15::o(;*@) {
 }
 
 #
-# HP15 file test -R expr
+# HP-15 file test -R expr
 #
 sub Ehp15::R(;*@) {
 
@@ -1456,7 +1563,7 @@ sub Ehp15::R(;*@) {
 }
 
 #
-# HP15 file test -W expr
+# HP-15 file test -W expr
 #
 sub Ehp15::W(;*@) {
 
@@ -1489,7 +1596,7 @@ sub Ehp15::W(;*@) {
 }
 
 #
-# HP15 file test -X expr
+# HP-15 file test -X expr
 #
 sub Ehp15::X(;*@) {
 
@@ -1524,7 +1631,7 @@ sub Ehp15::X(;*@) {
 }
 
 #
-# HP15 file test -O expr
+# HP-15 file test -O expr
 #
 sub Ehp15::O(;*@) {
 
@@ -1557,7 +1664,7 @@ sub Ehp15::O(;*@) {
 }
 
 #
-# HP15 file test -e expr
+# HP-15 file test -e expr
 #
 sub Ehp15::e(;*@) {
 
@@ -1600,7 +1707,7 @@ sub Ehp15::e(;*@) {
 }
 
 #
-# HP15 file test -z expr
+# HP-15 file test -z expr
 #
 sub Ehp15::z(;*@) {
 
@@ -1633,7 +1740,7 @@ sub Ehp15::z(;*@) {
 }
 
 #
-# HP15 file test -s expr
+# HP-15 file test -s expr
 #
 sub Ehp15::s(;*@) {
 
@@ -1666,7 +1773,7 @@ sub Ehp15::s(;*@) {
 }
 
 #
-# HP15 file test -f expr
+# HP-15 file test -f expr
 #
 sub Ehp15::f(;*@) {
 
@@ -1699,7 +1806,7 @@ sub Ehp15::f(;*@) {
 }
 
 #
-# HP15 file test -d expr
+# HP-15 file test -d expr
 #
 sub Ehp15::d(;*@) {
 
@@ -1724,7 +1831,7 @@ sub Ehp15::d(;*@) {
 }
 
 #
-# HP15 file test -l expr
+# HP-15 file test -l expr
 #
 sub Ehp15::l(;*@) {
 
@@ -1757,7 +1864,7 @@ sub Ehp15::l(;*@) {
 }
 
 #
-# HP15 file test -p expr
+# HP-15 file test -p expr
 #
 sub Ehp15::p(;*@) {
 
@@ -1790,7 +1897,7 @@ sub Ehp15::p(;*@) {
 }
 
 #
-# HP15 file test -S expr
+# HP-15 file test -S expr
 #
 sub Ehp15::S(;*@) {
 
@@ -1823,7 +1930,7 @@ sub Ehp15::S(;*@) {
 }
 
 #
-# HP15 file test -b expr
+# HP-15 file test -b expr
 #
 sub Ehp15::b(;*@) {
 
@@ -1856,7 +1963,7 @@ sub Ehp15::b(;*@) {
 }
 
 #
-# HP15 file test -c expr
+# HP-15 file test -c expr
 #
 sub Ehp15::c(;*@) {
 
@@ -1889,7 +1996,7 @@ sub Ehp15::c(;*@) {
 }
 
 #
-# HP15 file test -t expr
+# HP-15 file test -t expr
 #
 sub Ehp15::t(;*@) {
 
@@ -1922,7 +2029,7 @@ sub Ehp15::t(;*@) {
 }
 
 #
-# HP15 file test -u expr
+# HP-15 file test -u expr
 #
 sub Ehp15::u(;*@) {
 
@@ -1955,7 +2062,7 @@ sub Ehp15::u(;*@) {
 }
 
 #
-# HP15 file test -g expr
+# HP-15 file test -g expr
 #
 sub Ehp15::g(;*@) {
 
@@ -1988,7 +2095,7 @@ sub Ehp15::g(;*@) {
 }
 
 #
-# HP15 file test -k expr
+# HP-15 file test -k expr
 #
 sub Ehp15::k(;*@) {
 
@@ -2021,7 +2128,7 @@ sub Ehp15::k(;*@) {
 }
 
 #
-# HP15 file test -T expr
+# HP-15 file test -T expr
 #
 sub Ehp15::T(;*@) {
 
@@ -2097,7 +2204,7 @@ sub Ehp15::T(;*@) {
 }
 
 #
-# HP15 file test -B expr
+# HP-15 file test -B expr
 #
 sub Ehp15::B(;*@) {
 
@@ -2163,7 +2270,7 @@ sub Ehp15::B(;*@) {
 }
 
 #
-# HP15 file test -M expr
+# HP-15 file test -M expr
 #
 sub Ehp15::M(;*@) {
 
@@ -2197,7 +2304,7 @@ sub Ehp15::M(;*@) {
 }
 
 #
-# HP15 file test -A expr
+# HP-15 file test -A expr
 #
 sub Ehp15::A(;*@) {
 
@@ -2231,7 +2338,7 @@ sub Ehp15::A(;*@) {
 }
 
 #
-# HP15 file test -C expr
+# HP-15 file test -C expr
 #
 sub Ehp15::C(;*@) {
 
@@ -2265,7 +2372,7 @@ sub Ehp15::C(;*@) {
 }
 
 #
-# HP15 file test -r $_
+# HP-15 file test -r $_
 #
 sub Ehp15::r_() {
 
@@ -2289,7 +2396,7 @@ sub Ehp15::r_() {
 }
 
 #
-# HP15 file test -w $_
+# HP-15 file test -w $_
 #
 sub Ehp15::w_() {
 
@@ -2313,7 +2420,7 @@ sub Ehp15::w_() {
 }
 
 #
-# HP15 file test -x $_
+# HP-15 file test -x $_
 #
 sub Ehp15::x_() {
 
@@ -2339,7 +2446,7 @@ sub Ehp15::x_() {
 }
 
 #
-# HP15 file test -o $_
+# HP-15 file test -o $_
 #
 sub Ehp15::o_() {
 
@@ -2363,7 +2470,7 @@ sub Ehp15::o_() {
 }
 
 #
-# HP15 file test -R $_
+# HP-15 file test -R $_
 #
 sub Ehp15::R_() {
 
@@ -2387,7 +2494,7 @@ sub Ehp15::R_() {
 }
 
 #
-# HP15 file test -W $_
+# HP-15 file test -W $_
 #
 sub Ehp15::W_() {
 
@@ -2411,7 +2518,7 @@ sub Ehp15::W_() {
 }
 
 #
-# HP15 file test -X $_
+# HP-15 file test -X $_
 #
 sub Ehp15::X_() {
 
@@ -2437,7 +2544,7 @@ sub Ehp15::X_() {
 }
 
 #
-# HP15 file test -O $_
+# HP-15 file test -O $_
 #
 sub Ehp15::O_() {
 
@@ -2461,7 +2568,7 @@ sub Ehp15::O_() {
 }
 
 #
-# HP15 file test -e $_
+# HP-15 file test -e $_
 #
 sub Ehp15::e_() {
 
@@ -2485,7 +2592,7 @@ sub Ehp15::e_() {
 }
 
 #
-# HP15 file test -z $_
+# HP-15 file test -z $_
 #
 sub Ehp15::z_() {
 
@@ -2509,7 +2616,7 @@ sub Ehp15::z_() {
 }
 
 #
-# HP15 file test -s $_
+# HP-15 file test -s $_
 #
 sub Ehp15::s_() {
 
@@ -2533,7 +2640,7 @@ sub Ehp15::s_() {
 }
 
 #
-# HP15 file test -f $_
+# HP-15 file test -f $_
 #
 sub Ehp15::f_() {
 
@@ -2557,7 +2664,7 @@ sub Ehp15::f_() {
 }
 
 #
-# HP15 file test -d $_
+# HP-15 file test -d $_
 #
 sub Ehp15::d_() {
 
@@ -2571,7 +2678,7 @@ sub Ehp15::d_() {
 }
 
 #
-# HP15 file test -l $_
+# HP-15 file test -l $_
 #
 sub Ehp15::l_() {
 
@@ -2595,7 +2702,7 @@ sub Ehp15::l_() {
 }
 
 #
-# HP15 file test -p $_
+# HP-15 file test -p $_
 #
 sub Ehp15::p_() {
 
@@ -2619,7 +2726,7 @@ sub Ehp15::p_() {
 }
 
 #
-# HP15 file test -S $_
+# HP-15 file test -S $_
 #
 sub Ehp15::S_() {
 
@@ -2643,7 +2750,7 @@ sub Ehp15::S_() {
 }
 
 #
-# HP15 file test -b $_
+# HP-15 file test -b $_
 #
 sub Ehp15::b_() {
 
@@ -2667,7 +2774,7 @@ sub Ehp15::b_() {
 }
 
 #
-# HP15 file test -c $_
+# HP-15 file test -c $_
 #
 sub Ehp15::c_() {
 
@@ -2691,7 +2798,7 @@ sub Ehp15::c_() {
 }
 
 #
-# HP15 file test -t $_
+# HP-15 file test -t $_
 #
 sub Ehp15::t_() {
 
@@ -2699,7 +2806,7 @@ sub Ehp15::t_() {
 }
 
 #
-# HP15 file test -u $_
+# HP-15 file test -u $_
 #
 sub Ehp15::u_() {
 
@@ -2723,7 +2830,7 @@ sub Ehp15::u_() {
 }
 
 #
-# HP15 file test -g $_
+# HP-15 file test -g $_
 #
 sub Ehp15::g_() {
 
@@ -2747,7 +2854,7 @@ sub Ehp15::g_() {
 }
 
 #
-# HP15 file test -k $_
+# HP-15 file test -k $_
 #
 sub Ehp15::k_() {
 
@@ -2771,7 +2878,7 @@ sub Ehp15::k_() {
 }
 
 #
-# HP15 file test -T $_
+# HP-15 file test -T $_
 #
 sub Ehp15::T_() {
 
@@ -2805,7 +2912,7 @@ sub Ehp15::T_() {
 }
 
 #
-# HP15 file test -B $_
+# HP-15 file test -B $_
 #
 sub Ehp15::B_() {
 
@@ -2839,7 +2946,7 @@ sub Ehp15::B_() {
 }
 
 #
-# HP15 file test -M $_
+# HP-15 file test -M $_
 #
 sub Ehp15::M_() {
 
@@ -2864,7 +2971,7 @@ sub Ehp15::M_() {
 }
 
 #
-# HP15 file test -A $_
+# HP-15 file test -A $_
 #
 sub Ehp15::A_() {
 
@@ -2889,7 +2996,7 @@ sub Ehp15::A_() {
 }
 
 #
-# HP15 file test -C $_
+# HP-15 file test -C $_
 #
 sub Ehp15::C_() {
 
@@ -2914,7 +3021,7 @@ sub Ehp15::C_() {
 }
 
 #
-# HP15 path globbing (with parameter)
+# HP-15 path globbing (with parameter)
 #
 sub Ehp15::glob($) {
 
@@ -2927,7 +3034,7 @@ sub Ehp15::glob($) {
 }
 
 #
-# HP15 path globbing (without parameter)
+# HP-15 path globbing (without parameter)
 #
 sub Ehp15::glob_() {
 
@@ -2940,7 +3047,7 @@ sub Ehp15::glob_() {
 }
 
 #
-# HP15 path globbing from File::DosGlob module
+# HP-15 path globbing from File::DosGlob module
 #
 my %iter;
 my %entries;
@@ -2991,7 +3098,7 @@ sub _dosglob {
 }
 
 #
-# HP15 path globbing subroutine
+# HP-15 path globbing subroutine
 #
 sub _do_glob {
 
@@ -3010,7 +3117,7 @@ OUTER:
         my $tail;
 
         # if argument is within quotes strip em and do no globbing
-        if ($expr =~ m/\A " ((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*) " \z/oxms) {
+        if ($expr =~ m/\A " ((?:$q_char)*) " \z/oxms) {
             $expr = $1;
             if ($cond eq 'd') {
                 if (Ehp15::d $expr) {
@@ -3034,7 +3141,7 @@ OUTER:
                 push @glob, $expr;
                 next OUTER;
             }
-            if ($head =~ m/ \A (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*? [*?] /oxms) {
+            if ($head =~ m/ \A (?:$q_char)*? [*?] /oxms) {
                 if (@globdir = _do_glob('d', $head)) {
                     push @glob, _do_glob($cond, map {"$_$pathsep$tail"} @globdir);
                     next OUTER;
@@ -3047,11 +3154,11 @@ OUTER:
         }
 
         # If file component has no wildcards, we can avoid opendir
-        if ($expr !~ m/ \A (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*? [*?] /oxms) {
+        if ($expr !~ m/ \A (?:$q_char)*? [*?] /oxms) {
             if ($head eq '.') {
                 $head = '';
             }
-            if ($head ne '' and ($head =~ m/ \G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg)[-1] ne $pathsep) {
+            if ($head ne '' and ($head =~ m/ \G ($q_char) /oxmsg)[-1] ne $pathsep) {
                 $head .= $pathsep;
             }
             $head .= $expr;
@@ -3074,16 +3181,16 @@ OUTER:
         if ($head eq '.') {
             $head = '';
         }
-        if ($head ne '' and ($head =~ m/ \G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg)[-1] ne $pathsep) {
+        if ($head ne '' and ($head =~ m/ \G ($q_char) /oxmsg)[-1] ne $pathsep) {
             $head .= $pathsep;
         }
 
         my $pattern = '';
-        while ($expr =~ m/ \G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxgc) {
+        while ($expr =~ m/ \G ($q_char) /oxgc) {
             $pattern .= {
-                '*' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*',
-            ### '?' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])',   # UNIX style
-                '?' => '(?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])?',  # DOS style
+                '*' => "(?:$your_char)*",
+            ### '?' => "(?:$your_char)",   # UNIX style
+                '?' => "(?:$your_char)?",  # DOS style
                 'a' => 'A',
                 'b' => 'B',
                 'c' => 'C',
@@ -3154,7 +3261,7 @@ INNER:
 }
 
 #
-# HP15 parse line
+# HP-15 parse line
 #
 sub _parse_line {
 
@@ -3173,7 +3280,7 @@ sub _parse_line {
 }
 
 #
-# HP15 parse path
+# HP-15 parse path
 #
 sub _parse_path {
 
@@ -3192,7 +3299,7 @@ sub _parse_path {
 }
 
 #
-# HP15 file lstat (with parameter)
+# HP-15 file lstat (with parameter)
 #
 sub Ehp15::lstat(*) {
 
@@ -3217,7 +3324,7 @@ sub Ehp15::lstat(*) {
 }
 
 #
-# HP15 file lstat (without parameter)
+# HP-15 file lstat (without parameter)
 #
 sub Ehp15::lstat_() {
 
@@ -3240,7 +3347,7 @@ sub Ehp15::lstat_() {
 }
 
 #
-# HP15 path opendir
+# HP-15 path opendir
 #
 sub Ehp15::opendir(*$) {
 
@@ -3261,7 +3368,7 @@ sub Ehp15::opendir(*$) {
 }
 
 #
-# HP15 file stat (with parameter)
+# HP-15 file stat (with parameter)
 #
 sub Ehp15::stat(*) {
 
@@ -3286,7 +3393,7 @@ sub Ehp15::stat(*) {
 }
 
 #
-# HP15 file stat (without parameter)
+# HP-15 file stat (without parameter)
 #
 sub Ehp15::stat_() {
 
@@ -3309,7 +3416,7 @@ sub Ehp15::stat_() {
 }
 
 #
-# HP15 path unlink
+# HP-15 path unlink
 #
 sub Ehp15::unlink(@) {
 
@@ -3321,9 +3428,9 @@ sub Ehp15::unlink(@) {
             $unlink++;
         }
         elsif (_MSWin32_5Cended_path($_)) {
-            my @char = /\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
+            my @char = m/\G ($q_char) /oxmsg;
             my $file = join '', map {{'/' => '\\'}->{$_} || $_} @char;
-            if ($file =~ m/ \A (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF])*? [ ] /oxms) {
+            if ($file =~ m/ \A (?:$q_char)*? [ ] /oxms) {
                 $file = qq{"$file"};
             }
 
@@ -3350,7 +3457,7 @@ sub Ehp15::unlink(@) {
 }
 
 #
-# HP15 chdir
+# HP-15 chdir
 #
 sub Ehp15::chdir(;$) {
 
@@ -3387,14 +3494,14 @@ sub Ehp15::chdir(;$) {
 }
 
 #
-# HP15 chr(0x5C) ended path on MSWin32
+# HP-15 chr(0x5C) ended path on MSWin32
 #
 sub _MSWin32_5Cended_path {
 
     if ((@_ >= 1) and ($_[0] ne '')) {
-        if ($^O =~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
-            my @char = $_[0] =~ /\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
-            if ($char[-1] =~ m/\A [\x80-\xA0\xE0-\xFE][\x5C] \z/oxms) {
+        if ($^O =~ m/\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
+            my @char = $_[0] =~ /\G ($q_char) /oxmsg;
+            if ($char[-1] =~ m/ \x5C \z/oxms) {
                 return 1;
             }
         }
@@ -3403,7 +3510,7 @@ sub _MSWin32_5Cended_path {
 }
 
 #
-# do HP15 file
+# do HP-15 file
 #
 sub Ehp15::do($) {
     my($filename) = @_;
@@ -3459,7 +3566,7 @@ ITER_DO:
 }
 
 #
-# require HP15 file
+# require HP-15 file
 #
 
 # require
@@ -3523,46 +3630,46 @@ ITER_REQUIRE:
 }
 
 #
-# HP15 length by character
+# HP-15 length by character
 #
 sub HP15::length {
 
     local $_ = shift if @_;
 
-    return scalar m/\G ([\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]) /oxmsg;
+    return scalar m/\G ($q_char) /oxmsg;
 }
 
 #
-# HP15 substr by character
+# HP-15 substr by character
 #
 sub HP15::substr ($$;$$) {
 
     if (defined $_[3]) {
         if (defined $_[4]) {
             my(undef,$offset,$length,$replacement) = @_;
-            if ($_[0] =~ s/\A ((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]){$offset}) ((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]){0,$length}) \z/$1$replacement/xms) {
+            if ($_[0] =~ s/\A ((?:$q_char){$offset}) ((?:$q_char){0,$length}) \z/$1$replacement/xms) {
                 return $2;
             }
         }
         else {
             my($expr,$offset,$length) = @_;
-            if ($expr =~ m/\A (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]){$offset} ((?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]){0,$length}) \z/xms) {
+            if ($expr =~ m/\A (?:$q_char){$offset} ((?:$q_char){0,$length}) \z/xms) {
                 return $1;
             }
         }
     }
     else {
         my($expr,$offset) = @_;
-        if ($expr =~ m/\A (?:[\x80-\xA0\xE0-\xFE][\x00-\xFF]|[\x00-\xFF]){$offset} (.*) \z/xms) {
+        if ($expr =~ m/\A (?:$q_char){$offset} (.*) \z/xms) {
             return $1;
         }
     }
 
-    confess "$0: HP15::substr outside of string";
+    croak "$0: HP15::substr outside of string";
 }
 
 #
-# HP15 index by character
+# HP-15 index by character
 #
 sub HP15::index($$;$) {
 
@@ -3583,7 +3690,7 @@ sub HP15::index($$;$) {
 }
 
 #
-# HP15 rindex by character
+# HP-15 rindex by character
 #
 sub HP15::rindex($$;$) {
 
@@ -3703,19 +3810,19 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   @split = Ehp15::split();
   @split = Ehp15::split;
 
-  Scans a HP15 $string for delimiters that match pattern and splits the HP15
+  Scans a HP-15 $string for delimiters that match pattern and splits the HP-15
   $string into a list of substrings, returning the resulting list value in list
   context, or the count of substrings in scalar context. The delimiters are
   determined by repeated pattern matching, using the regular expression given in
-  pattern, so the delimiters may be of any size and need not be the same HP15
+  pattern, so the delimiters may be of any size and need not be the same HP-15
   $string on every match. If the pattern doesn't match at all, Ehp15::split returns
-  the original HP15 $string as a single substring. If it matches once, you get
+  the original HP-15 $string as a single substring. If it matches once, you get
   two substrings, and so on.
   If $limit is specified and is not negative, the function splits into no more than
   that many fields. If $limit is negative, it is treated as if an arbitrarily large
   $limit has been specified. If $limit is omitted, trailing null fields are stripped
   from the result (which potential users of pop would do well to remember).
-  If HP15 $string is omitted, the function splits the $_ HP15 string.
+  If HP-15 $string is omitted, the function splits the $_ HP-15 string.
   If $patten is also omitted, the function splits on whitespace, /\s+/, after
   skipping any leading whitespace.
   If the pattern contains parentheses, then the substring matched by each pair of
@@ -3727,10 +3834,10 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $tr = Ehp15::tr($string,$searchlist,$replacementlist,$modifier);
   $tr = Ehp15::tr($string,$searchlist,$replacementlist);
 
-  This function scans a HP15 string character by character and replaces all
+  This function scans a HP-15 string character by character and replaces all
   occurrences of the characters found in $searchlist with the corresponding character
   in $replacementlist. It returns the number of characters replaced or deleted.
-  If no HP15 string is specified via =~ operator, the $_ string is translated.
+  If no HP-15 string is specified via =~ operator, the $_ string is translated.
   $modifier are:
 
   Modifier   Meaning
@@ -3746,8 +3853,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $chop = Ehp15::chop();
   $chop = Ehp15::chop;
 
-  Chops off the last character of a HP15 string contained in the variable (or
-  HP15 strings in each element of a @list) and returns the character chopped.
+  Chops off the last character of a HP-15 string contained in the variable (or
+  HP-15 strings in each element of a @list) and returns the character chopped.
   The Ehp15::chop operator is used primarily to remove the newline from the end of
   an input record but is more efficient than s/\n$//. If no argument is given, the
   function chops the $_ variable.
@@ -3757,8 +3864,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $pos = Ehp15::index($string,$substr,$position);
   $pos = Ehp15::index($string,$substr);
 
-  Returns the position of the first occurrence of $substr in HP15 $string.
-  The start, if specified, specifies the $position to start looking in the HP15
+  Returns the position of the first occurrence of $substr in HP-15 $string.
+  The start, if specified, specifies the $position to start looking in the HP-15
   $string. Positions are integer numbers based at 0. If the substring is not found,
   the Ehp15::index function returns -1.
 
@@ -3768,16 +3875,16 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $pos = Ehp15::rindex($string,$substr);
 
   Works just like Ehp15::index except that it returns the position of the last
-  occurence of $substr in HP15 $string (a reverse index). The function returns
+  occurence of $substr in HP-15 $string (a reverse index). The function returns
   -1 if not found. $position, if specified, is the rightmost position that may be
-  returned, i.e., how far in the HP15 string the function can search.
+  returned, i.e., how far in the HP-15 string the function can search.
 
 =item Lower case string
 
   $lc = Ehp15::lc($string);
   $lc = Ehp15::lc_;
 
-  Returns a lowercase version of HP15 string (or $_, if omitted). This is the
+  Returns a lowercase version of HP-15 string (or $_, if omitted). This is the
   internal function implementing the \L escape in double-quoted strings.
 
 =item Upper case string
@@ -3785,7 +3892,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $uc = Ehp15::uc($string);
   $uc = Ehp15::uc_;
 
-  Returns an uppercased version of HP15 string (or $_, if string is omitted).
+  Returns an uppercased version of HP-15 string (or $_, if string is omitted).
   This is the internal function implementing the \U escape in double-quoted
   strings.
 
@@ -3807,8 +3914,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $chr = Ehp15::chr_;
 
   This function returns the character represented by that $code in the character
-  set. For example, Ehp15::chr(65) is "A" in either ASCII or HP15, and
-  Ehp15::chr(0x82a0) is a HP15 HIRAGANA LETTER A. For the reverse of Ehp15::chr,
+  set. For example, Ehp15::chr(65) is "A" in either ASCII or HP-15, and
+  Ehp15::chr(0x82a0) is a HP-15 HIRAGANA LETTER A. For the reverse of Ehp15::chr,
   use Ehp15::ord.
 
 =item Order of Character
@@ -3816,7 +3923,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   $ord = Ehp15::ord($string);
   $ord = Ehp15::ord_;
 
-  This function returns the numeric value (ASCII or HP15) of the first character
+  This function returns the numeric value (ASCII or HP-15) of the first character
   of $string. The return value is always unsigned.
 
 =item Reverse list or string
@@ -3879,7 +3986,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   The Ehp15::T, Ehp15::T_, Ehp15::B and Ehp15::B_ work as follows. The first block
   or so of the file is examined for strange chatracters such as
-  [\000-\007\013\016-\032\034-\037\377] (that don't look like HP15). If more
+  [\000-\007\013\016-\032\034-\037\377] (that don't look like HP-15). If more
   than 10% of the bytes appear to be strange, it's a *maybe* binary file;
   otherwise, it's a *maybe* text file. Also, any file containing ASCII NUL(\0) or
   \377 in the first block is considered a binary file. If Ehp15::T or Ehp15::B is
@@ -4086,7 +4193,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   See also do file.
 
-=item length by HP15 character
+=item length by HP-15 character
 
   $length = HP15::length($string);
   $length = HP15::length();
@@ -4106,7 +4213,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   $blen = CORE::length $string;
 
-=item substr by HP15 character
+=item substr by HP-15 character
 
   $substr = HP15::substr($string,$offset,$length,$replacement);
   $substr = HP15::substr($string,$offset,$length);
@@ -4147,7 +4254,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
   HP15::substr($var, -1, 0, "Curly");
 
-=item index by HP15 character
+=item index by HP-15 character
 
   $index = HP15::index($string,$substring,$offset);
   $index = HP15::index($string,$substring);
@@ -4164,7 +4271,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
       $pos++;
   }
 
-=item rindex by HP15 character
+=item rindex by HP-15 character
 
   $rindex = HP15::rindex($string,$substring,$position);
   $rindex = HP15::rindex($string,$substring);
