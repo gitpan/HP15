@@ -17,9 +17,9 @@ SYNOPSIS
 DESCRIPTION
 
       This software is "Yet Another JPerl" written by Perl.
-      We can write the script in HP-15 again.
+      We can write the script in HP-15.
 
-      This software is a beta version for the public comment.
+      This software treats HP-15 directly. Therefore, there is not UTF8 flag.
 
 INSTALLATION
 
