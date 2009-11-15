@@ -11,7 +11,7 @@ use strict;
 use 5.00503;
 use vars qw($VERSION $_warning);
 
-$VERSION = sprintf '%d.%02d', q$Revision: 0.43 $ =~ m/(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.44 $ =~ m/(\d+)/xmsg;
 
 use Fcntl;
 use Symbol;
@@ -173,6 +173,7 @@ sub Ehp15::capture($);
 sub Ehp15::ignorecase(@);
 sub Ehp15::chr(;$);
 sub Ehp15::chr_();
+sub Ehp15::filetest(@);
 sub Ehp15::r(;*@);
 sub Ehp15::w(;*@);
 sub Ehp15::x(;*@);
@@ -200,6 +201,7 @@ sub Ehp15::B(;*@);
 sub Ehp15::M(;*@);
 sub Ehp15::A(;*@);
 sub Ehp15::C(;*@);
+sub Ehp15::filetest_(@);
 sub Ehp15::r_();
 sub Ehp15::w_();
 sub Ehp15::x_();
@@ -1380,6 +1382,25 @@ sub Ehp15::chr_() {
 }
 
 #
+# HP-15 stacked file test expr
+#
+sub Ehp15::filetest (@) {
+
+    my $file     = pop @_;
+    my $filetest = substr(pop @_, 1);
+
+    unless (eval qq{Ehp15::$filetest(\$file)}) {
+        return '';
+    }
+    for my $filetest (reverse @_) {
+        unless (eval qq{ $filetest _ }) {
+            return '';
+        }
+    }
+    return 1;
+}
+
+#
 # HP-15 file test -r expr
 #
 sub Ehp15::r(;*@) {
@@ -2352,6 +2373,24 @@ sub Ehp15::C(;*@) {
         }
     }
     return wantarray ? (undef,@_) : undef;
+}
+
+#
+# HP-15 stacked file test $_
+#
+sub Ehp15::filetest_ (@) {
+
+    my $filetest = substr(pop @_, 1);
+
+    unless (eval qq{Ehp15::${filetest}_}) {
+        return '';
+    }
+    for my $filetest (reverse @_) {
+        unless (eval qq{ $filetest _ }) {
+            return '';
+        }
+    }
+    return 1;
 }
 
 #
