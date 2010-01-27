@@ -3,6 +3,8 @@ package Ehp15;
 #
 # Ehp15 - Run-time routines for HP15.pm
 #
+#                  http://search.cpan.org/dist/HP15/
+#
 # Copyright (c) 2008, 2009, 2010 INABA Hitoshi <ina@cpan.org>
 #
 ######################################################################
@@ -11,7 +13,7 @@ use strict;
 use 5.00503;
 use vars qw($VERSION $_warning);
 
-$VERSION = sprintf '%d.%02d', q$Revision: 0.47 $ =~ m/(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.48 $ =~ m/(\d+)/xmsg;
 
 use Fcntl;
 use Symbol;
@@ -3626,6 +3628,16 @@ sub Ehp15::require(;$) {
 
     local $_ = shift if @_;
     return 1 if $INC{$_};
+
+    # jcode.pl
+    # ftp://ftp.iij.ad.jp/pub/IIJ/dist/utashiro/perl/
+
+    # jacode.pl
+    # http://search.cpan.org/dist/jacode/
+
+    if (m{ \b (?: jcode\.pl | jacode\.pl) \z }oxms) {
+        return CORE::require($_);
+    }
 
     my $realfilename;
     my $result;
