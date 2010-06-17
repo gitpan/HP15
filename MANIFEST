@@ -1,5 +1,5 @@
-lib/HP15.pm
-lib/Ehp15.pm
+HP15.pm
+Ehp15.pm
 perl58.bat
 perl510.bat
 perl512.bat
