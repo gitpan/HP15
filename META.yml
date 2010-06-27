@@ -1,7 +1,7 @@
 --- #YAML:1.0
 name: HP15
 abstract: Source code filter for HP-15 script
-version: 0.60
+version: 0.61
 author:
   - INABA Hitoshi <ina@cpan.org>
 license: perl
