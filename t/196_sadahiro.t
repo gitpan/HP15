@@ -39,5 +39,3 @@ else {
 }
 
 __END__
-
-http://search.cpan.org/dist/HP-15-Regexp/
