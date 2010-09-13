@@ -1,6 +1,6 @@
 NAME
 
-       HP15 - "Yet Another JPerl" Source code filter for HP-15 script
+       HP15 - Source code filter for HP-15 script
 
 SYNOPSIS
 
@@ -18,7 +18,7 @@ SYNOPSIS
 
 DESCRIPTION
 
-      This software is "Yet Another JPerl" written by Perl.
+      This software is "JPerl on the Modern Perl" written by Perl.
       We can write the script in HP-15.
 
       This software treats HP-15 directly. Therefore, there is not UTF8 flag.

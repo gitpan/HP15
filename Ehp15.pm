@@ -23,7 +23,7 @@ BEGIN {
 
 BEGIN { eval q{ use vars qw($VERSION $_warning) } }
 
-$VERSION = sprintf '%d.%02d', q$Revision: 0.63 $ =~ m/(\d+)/xmsg;
+$VERSION = sprintf '%d.%02d', q$Revision: 0.64 $ =~ m/(\d+)/xmsg;
 
 # poor Symbol.pm - substitute of real Symbol.pm
 BEGIN {
@@ -262,8 +262,12 @@ sub Ehp15::tr($$$$;$);
 sub Ehp15::chop(@);
 sub Ehp15::index($$;$);
 sub Ehp15::rindex($$;$);
+sub Ehp15::lcfirst(@);
+sub Ehp15::lcfirst_();
 sub Ehp15::lc(@);
 sub Ehp15::lc_();
+sub Ehp15::ucfirst(@);
+sub Ehp15::ucfirst_();
 sub Ehp15::uc(@);
 sub Ehp15::uc_();
 sub Ehp15::capture($);
@@ -714,6 +718,27 @@ sub Ehp15::rindex($$;$) {
         );
     }
 
+    # lower case first with parameter
+    sub Ehp15::lcfirst(@) {
+        if (@_) {
+            my $s = shift @_;
+            if (@_ and wantarray) {
+                return Ehp15::lc(CORE::substr($s,0,1)) . CORE::substr($s,1), @_;
+            }
+            else {
+                return Ehp15::lc(CORE::substr($s,0,1)) . CORE::substr($s,1);
+            }
+        }
+        else {
+            return Ehp15::lc(CORE::substr($_,0,1)) . CORE::substr($_,1);
+        }
+    }
+
+    # lower case first without parameter
+    sub Ehp15::lcfirst_() {
+        return Ehp15::lc(CORE::substr($_,0,1)) . CORE::substr($_,1);
+    }
+
     # lower case with parameter
     sub Ehp15::lc(@) {
         if (@_) {
@@ -780,6 +805,27 @@ sub Ehp15::rindex($$;$) {
             "\xFD" => "\xDD", # LATIN LETTER Y WITH ACUTE
             "\xFE" => "\xDE", # LATIN LETTER THORN (Icelandic)
         );
+    }
+
+    # upper case first with parameter
+    sub Ehp15::ucfirst(@) {
+        if (@_) {
+            my $s = shift @_;
+            if (@_ and wantarray) {
+                return Ehp15::uc(CORE::substr($s,0,1)) . CORE::substr($s,1), @_;
+            }
+            else {
+                return Ehp15::uc(CORE::substr($s,0,1)) . CORE::substr($s,1);
+            }
+        }
+        else {
+            return Ehp15::uc(CORE::substr($_,0,1)) . CORE::substr($_,1);
+        }
+    }
+
+    # upper case first without parameter
+    sub Ehp15::ucfirst_() {
+        return Ehp15::uc(CORE::substr($_,0,1)) . CORE::substr($_,1);
     }
 
     # upper case with parameter
@@ -4244,8 +4290,12 @@ Ehp15 - Run-time routines for HP15.pm
     Ehp15::rindex(...);
     Ehp15::lc(...);
     Ehp15::lc_;
+    Ehp15::lcfirst(...);
+    Ehp15::lcfirst_;
     Ehp15::uc(...);
     Ehp15::uc_;
+    Ehp15::ucfirst(...);
+    Ehp15::ucfirst_;
     Ehp15::capture(...);
     Ehp15::ignorecase(...);
     Ehp15::chr(...);
@@ -4390,6 +4440,15 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   Returns a lowercase version of HP-15 string (or $_, if omitted). This is the
   internal function implementing the \L escape in double-quoted strings.
 
+=item Lower case first character of string
+
+  $lcfirst = Ehp15::lcfirst($string);
+  $lcfirst = Ehp15::lcfirst_;
+
+  Returns a version of HP-15 string (or $_, if omitted) with the first character
+  lowercased. This is the internal function implementing the \l escape in double-
+  quoted strings.
+
 =item Upper case string
 
   $uc = Ehp15::uc($string);
@@ -4398,6 +4457,15 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   Returns an uppercased version of HP-15 string (or $_, if string is omitted).
   This is the internal function implementing the \U escape in double-quoted
   strings.
+
+=item Upper case first character of string
+
+  $ucfirst = Ehp15::ucfirst($string);
+  $ucfirst = Ehp15::ucfirst_;
+
+  Returns a version of HP-15 string (or $_, if omitted) with the first character
+  uppercased. This is the internal function implementing the \u escape in double-
+  quoted strings.
 
 =item Make capture number
 
