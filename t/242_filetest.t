@@ -6,10 +6,10 @@ die "This file is not encoded in HP-15.\n" if q{‚ } ne "\x82\xa0";
 my $__FILE__ = __FILE__;
 
 use Ehp15;
-print "1..24\n";
+print "1..23\n";
 
 if ($^O !~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
-    for my $tno (1..24) {
+    for my $tno (1..23) {
         print "ok - $tno # SKIP $^X $0\n";
     }
     exit;
@@ -300,96 +300,79 @@ else {
     }
 }
 
-if (-t ('file')) {
-    if (Ehp15::t(_)) {
-        print "ok - 18 Ehp15::t _ == -t _ $^X $__FILE__\n";
-    }
-    else {
-        print "not ok - 18 Ehp15::t _ == -t _ $^X $__FILE__\n";
-    }
-}
-else {
-    if (Ehp15::t(_)) {
-        print "not ok - 18 Ehp15::t _ == -t _ $^X $__FILE__\n";
-    }
-    else {
-        print "ok - 18 Ehp15::t _ == -t _ $^X $__FILE__\n";
-    }
-}
-
 if (-u ('file')) {
     if (Ehp15::u(_)) {
-        print "ok - 19 Ehp15::u _ == -u _ $^X $__FILE__\n";
+        print "ok - 18 Ehp15::u _ == -u _ $^X $__FILE__\n";
     }
     else {
-        print "not ok - 19 Ehp15::u _ == -u _ $^X $__FILE__\n";
+        print "not ok - 18 Ehp15::u _ == -u _ $^X $__FILE__\n";
     }
 }
 else {
     if (Ehp15::u(_)) {
-        print "not ok - 19 Ehp15::u _ == -u _ $^X $__FILE__\n";
+        print "not ok - 18 Ehp15::u _ == -u _ $^X $__FILE__\n";
     }
     else {
-        print "ok - 19 Ehp15::u _ == -u _ $^X $__FILE__\n";
+        print "ok - 18 Ehp15::u _ == -u _ $^X $__FILE__\n";
     }
 }
 
 if (-g ('file')) {
     if (Ehp15::g(_)) {
-        print "ok - 20 Ehp15::g _ == -g _ $^X $__FILE__\n";
+        print "ok - 19 Ehp15::g _ == -g _ $^X $__FILE__\n";
     }
     else {
-        print "not ok - 20 Ehp15::g _ == -g _ $^X $__FILE__\n";
+        print "not ok - 19 Ehp15::g _ == -g _ $^X $__FILE__\n";
     }
 }
 else {
     if (Ehp15::g(_)) {
-        print "not ok - 20 Ehp15::g _ == -g _ $^X $__FILE__\n";
+        print "not ok - 19 Ehp15::g _ == -g _ $^X $__FILE__\n";
     }
     else {
-        print "ok - 20 Ehp15::g _ == -g _ $^X $__FILE__\n";
+        print "ok - 19 Ehp15::g _ == -g _ $^X $__FILE__\n";
     }
 }
 
 if (-k ('file')) {
     if (Ehp15::k(_)) {
-        print "ok - 21 Ehp15::k _ == -k _ $^X $__FILE__\n";
+        print "ok - 20 Ehp15::k _ == -k _ $^X $__FILE__\n";
     }
     else {
-        print "not ok - 21 Ehp15::k _ == -k _ $^X $__FILE__\n";
+        print "not ok - 20 Ehp15::k _ == -k _ $^X $__FILE__\n";
     }
 }
 else {
     if (Ehp15::k(_)) {
-        print "not ok - 21 Ehp15::k _ == -k _ $^X $__FILE__\n";
+        print "not ok - 20 Ehp15::k _ == -k _ $^X $__FILE__\n";
     }
     else {
-        print "ok - 21 Ehp15::k _ == -k _ $^X $__FILE__\n";
+        print "ok - 20 Ehp15::k _ == -k _ $^X $__FILE__\n";
     }
 }
 
 $_ = -M 'file';
 if (Ehp15::M(_) == $_) {
-    print "ok - 22 Ehp15::M _ (@{[Ehp15::M _]}) == -M 'file' ($_) $^X $__FILE__\n";
+    print "ok - 21 Ehp15::M _ (@{[Ehp15::M _]}) == -M 'file' ($_) $^X $__FILE__\n";
 }
 else {
-    print "not ok - 22 Ehp15::M _ (@{[Ehp15::M _]}) == -M 'file' ($_) $^X $__FILE__\n";
+    print "not ok - 21 Ehp15::M _ (@{[Ehp15::M _]}) == -M 'file' ($_) $^X $__FILE__\n";
 }
 
 $_ = -A 'file';
 if (Ehp15::A(_) == $_) {
-    print "ok - 23 Ehp15::A _ (@{[Ehp15::A _]}) == -A 'file' ($_) $^X $__FILE__\n";
+    print "ok - 22 Ehp15::A _ (@{[Ehp15::A _]}) == -A 'file' ($_) $^X $__FILE__\n";
 }
 else {
-    print "not ok - 23 Ehp15::A _ (@{[Ehp15::A _]}) == -A 'file' ($_) $^X $__FILE__\n";
+    print "not ok - 22 Ehp15::A _ (@{[Ehp15::A _]}) == -A 'file' ($_) $^X $__FILE__\n";
 }
 
 $_ = -C 'file';
 if (Ehp15::C(_) == $_) {
-    print "ok - 24 Ehp15::C _ (@{[Ehp15::C _]}) == -C 'file' ($_) $^X $__FILE__\n";
+    print "ok - 23 Ehp15::C _ (@{[Ehp15::C _]}) == -C 'file' ($_) $^X $__FILE__\n";
 }
 else {
-    print "not ok - 24 Ehp15::C _ (@{[Ehp15::C _]}) == -C 'file' ($_) $^X $__FILE__\n";
+    print "not ok - 23 Ehp15::C _ (@{[Ehp15::C _]}) == -C 'file' ($_) $^X $__FILE__\n";
 }
 
 close(FILE);

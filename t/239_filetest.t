@@ -6,10 +6,10 @@ die "This file is not encoded in HP-15.\n" if q{‚ } ne "\x82\xa0";
 my $__FILE__ = __FILE__;
 
 use Ehp15;
-print "1..26\n";
+print "1..22\n";
 
 if ($^O !~ /\A (?: MSWin32 | NetWare | symbian | dos ) \z/oxms) {
-    for my $tno (1..26) {
+    for my $tno (1..22) {
         print "ok - $tno # SKIP $^X $0\n";
     }
     exit;
@@ -138,68 +138,39 @@ else {
     print "not ok - 17 Ehp15::c 'directory' == -c 'directory' $^X $__FILE__\n";
 }
 
-local $^W = 0;
-if (((Ehp15::t 'directory') ne '') == ((-t 'directory') ne '')) {
-    print "ok - 18 Ehp15::t 'directory' == -t 'directory' $^X $__FILE__\n";
-}
-else {
-    print "not ok - 18 Ehp15::t 'directory' == -t 'directory' $^X $__FILE__\n";
-}
-
 if (((Ehp15::u 'directory') ne '') == ((-u 'directory') ne '')) {
-    print "ok - 19 Ehp15::u 'directory' == -u 'directory' $^X $__FILE__\n";
+    print "ok - 18 Ehp15::u 'directory' == -u 'directory' $^X $__FILE__\n";
 }
 else {
-    print "not ok - 19 Ehp15::u 'directory' == -u 'directory' $^X $__FILE__\n";
+    print "not ok - 18 Ehp15::u 'directory' == -u 'directory' $^X $__FILE__\n";
 }
 
 if (((Ehp15::g 'directory') ne '') == ((-g 'directory') ne '')) {
-    print "ok - 20 Ehp15::g 'directory' == -g 'directory' $^X $__FILE__\n";
+    print "ok - 19 Ehp15::g 'directory' == -g 'directory' $^X $__FILE__\n";
 }
 else {
-    print "not ok - 20 Ehp15::g 'directory' == -g 'directory' $^X $__FILE__\n";
-}
-
-if (((Ehp15::k 'directory') ne '') == ((-k 'directory') ne '')) {
-    print "ok - 21 Ehp15::k 'directory' == -k 'directory' $^X $__FILE__\n";
-}
-else {
-    print "not ok - 21 Ehp15::k 'directory' == -k 'directory' $^X $__FILE__\n";
-}
-
-if (((Ehp15::T 'directory') ne '') == ((-T 'directory') ne '')) {
-    print "ok - 22 Ehp15::T 'directory' == -T 'directory' $^X $__FILE__\n";
-}
-else {
-    print "not ok - 22 Ehp15::T 'directory' == -T 'directory' $^X $__FILE__\n";
-}
-
-if (((Ehp15::B 'directory') ne '') == ((-B 'directory') ne '')) {
-    print "ok - 23 Ehp15::B 'directory' == -B 'directory' $^X $__FILE__\n";
-}
-else {
-    print "not ok - 23 Ehp15::B 'directory' == -B 'directory' $^X $__FILE__\n";
+    print "not ok - 19 Ehp15::g 'directory' == -g 'directory' $^X $__FILE__\n";
 }
 
 if (((Ehp15::M 'directory') ne '') == ((-M 'directory') ne '')) {
-    print "ok - 24 Ehp15::M 'directory' == -M 'directory' $^X $__FILE__\n";
+    print "ok - 20 Ehp15::M 'directory' == -M 'directory' $^X $__FILE__\n";
 }
 else {
-    print "not ok - 24 Ehp15::M 'directory' == -M 'directory' $^X $__FILE__\n";
+    print "not ok - 20 Ehp15::M 'directory' == -M 'directory' $^X $__FILE__\n";
 }
 
 if (((Ehp15::A 'directory') ne '') == ((-A 'directory') ne '')) {
-    print "ok - 25 Ehp15::A 'directory' == -A 'directory' $^X $__FILE__\n";
+    print "ok - 21 Ehp15::A 'directory' == -A 'directory' $^X $__FILE__\n";
 }
 else {
-    print "not ok - 25 Ehp15::A 'directory' == -A 'directory' $^X $__FILE__\n";
+    print "not ok - 21 Ehp15::A 'directory' == -A 'directory' $^X $__FILE__\n";
 }
 
 if (((Ehp15::C 'directory') ne '') == ((-C 'directory') ne '')) {
-    print "ok - 26 Ehp15::C 'directory' == -C 'directory' $^X $__FILE__\n";
+    print "ok - 22 Ehp15::C 'directory' == -C 'directory' $^X $__FILE__\n";
 }
 else {
-    print "not ok - 26 Ehp15::C 'directory' == -C 'directory' $^X $__FILE__\n";
+    print "not ok - 22 Ehp15::C 'directory' == -C 'directory' $^X $__FILE__\n";
 }
 
 closedir(DIR);

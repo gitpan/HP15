@@ -4,6 +4,8 @@ die "This file is not encoded in HP-15.\n" if q{あ} ne "\x82\xa0";
 use HP15;
 print "1..1\n";
 
+$_ = '';
+
 # Search pattern not terminated
 # 「サーチパターンが終了しない」
 eval { /表/ };
